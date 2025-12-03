@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Control Documental - Expedientes PLD</title>
+    
+    <script async defer src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
+    <script async defer src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
+
+    <style>
+        /* ESTILOS (DISEÑO) */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; min-height: 100vh; }
+        .container { max-width: 1600px; margin: 0 auto; background: white; border-radius: 15px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); overflow: hidden; }
+        
+        /* Encabezado */
+        .header { background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); color: white; padding: 30px; text-align: center; }
+        .header h1 { font-size: 28px; margin-bottom: 10px; }
+        
+        /* NUEVO: ESTILO PARA EL PANEL DE AJUSTES */
+        .config-panel {
+            background: #f8f9fa;
+            border-bottom: 1px solid #e9ecef;
+            padding: 20px 30px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            border-left: 5px solid #17a2b8; /* Borde azul para destacar */
+        }
+
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; padding: 30px; background: white; }
+        .stat-card { background: #f8f9fa; padding: 20px; border-radius: 10px; text-align: center; border: 1px solid #e9ecef; }
+        .stat-number { font-size: 36px; font-weight: bold; margin: 10px 0; }
+        
+        /* Colores de estado */
+        .completo { color: #28a745; }
+        .parcial { color: #ffc107; }
+        .incompleto { color: #dc3545; }
+        
+        /* Controles y Botones */
+        .controls { padding: 20px 30px; background: white; border-top: 1px solid #eee; display: flex; gap: 15px; flex-wrap: wrap; justify-content: space-between; }
+        .btn { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; font-weight: 600; color: white; transition: 0.3s; }
+        .btn-primary { background: #007bff; }
+        .btn-success { background: #28a745; }
+        .btn-info { background: #17a2b8; }
+        .btn-danger { background: #dc3545; }
+        .btn:hover { opacity: 0.9; transform: translateY(-2px); }
+
+        /* Tabla */
+        .table-container { padding: 0 30px 30px; overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: #343a40; color: white; padding: 15px; text-align: left; }
+        td { padding: 15px; border-bottom: 1px solid #eee; }
+        
+        /* Modal y Checklist */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }
+        .modal.active { display: flex; }
+        .modal-content { background: white; padding: 30px; border-radius: 10px; max-width: 1000px; width: 95%; max-height: 90vh; overflow-y: auto; }
+        
+        .checklist-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px; margin-top: 20px; }
+        .doc-card { border: 2px solid #eee; padding: 15px; border-radius: 8px; }
+        .doc-card.ok { border-color: #28a745; background: #f0fff4; }
+        
+        .upload-zone { border: 2px dashed #cbd5e0; padding: 15px; text-align: center; margin-top: 10px; cursor: pointer; border-radius: 5px; color: #666; font-size: 13px; }
+        .upload-zone:hover { border-color: #007bff; background: #eef7ff; }
+
+        .file-link { display: block; margin-top: 5px; font-size: 12px; color: #007bff; text-decoration: none; }
+        .file-link:hover { text-decoration: underline; }
+
+        .toast { position: fixed; bottom: 20px; right: 20px; background: #333; color: white; padding: 12px 24px; border-radius: 5px; transform: translateY(100px); transition: 0.3s; }
+        .toast.show { transform: translateY(0); }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="header">
+            <h1>📂 Expedientes PLD - Conexión Drive</h1>
+            <p>Gestión Documental Sincronizada con Google Drive</p>
+        </div>
+
+        <div class="config-panel">
+            <div style="flex: 1;">
+                <label style="font-weight: bold; font-size: 12px; color: #555; display: block; margin-bottom: 5px;">
+                    🔧 CONFIGURACIÓN: ID DE CARPETA DESTINO (GOOGLE DRIVE)
+                </label>
+                <div style="display: flex; gap: 10px;">
+                    <input type="text" id="configFolderId" 
+                           placeholder="Pega aquí el ID de la carpeta compartida..." 
+                           style="flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                    <button class="btn btn-info" onclick="guardarConfiguracionDrive()">💾 Guardar ID</button>
+                    <button id="btnAuth" class="btn btn-primary" onclick="autenticarGoogle()">🔑 Conectar Cuenta Google</button>
+                </div>
+                <small style="color: #666; font-size: 11px;">
+                    * Este ID indica en qué carpeta de la nube se guardarán los archivos PDF.
+                </small>
+            </div>
+        </div>
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-number completo" id="totalCompletos">0</div>
+                <div class="stat-label">Completos</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number parcial" id="totalParciales">0</div>
+                <div class="stat-label">En Proceso</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="totalExpedientes">0</div>
+                <div class="stat-label">Total Expedientes</div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <input type="text" id="searchInput" placeholder="🔍 Buscar cliente..." style="padding: 10px; border: 1px solid #ccc; border-radius: 5px; width: 300px;">
+            <div>
+                <button class="btn btn-primary" onclick="nuevoExpediente()">➕ Nuevo Expediente</button>
+                <button class="btn btn-danger" onclick="borrarTodo()">⚠️ Resetear</button>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <table id="expedientesTable">
+                <thead>
+                    <tr>
+                        <th>Año</th>
+                        <th>Cliente</th>
+                        <th>Progreso</th>
+                        <th>Estado</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="modal" id="checklistModal">
+        <div class="modal-content">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid #eee; padding-bottom:10px;">
+                <h2 id="modalTitle">Auditoría</h2>
+                <span style="font-size:24px; cursor:pointer;" onclick="cerrarChecklist()">&times;</span>
+            </div>
+            <div class="checklist-grid" id="checklistContainer"></div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast">Notificación</div>
+
+    <script>
+        /* ==========================================
+           1. CONFIGURACIÓN DE GOOGLE DRIVE
+           ========================================== */
+        // ⚠️ REEMPLAZA ESTOS DATOS CON LOS TUYOS DE GOOGLE CLOUD CONSOLE ⚠️
+        const GDRIVE_CONFIG = {
+            CLIENT_ID: 'TU_CLIENT_ID.apps.googleusercontent.com', 
+            API_KEY: 'TU_API_KEY',
+            SCOPES: 'https://www.googleapis.com/auth/drive.file'
+        };
+
+        let tokenClient;
+        let accessToken = null;
+        let carpetaDestinoID = ''; // Aquí se guardará el ID que escribas en el panel
+
+        // Inicialización de API Google
+        function gapiLoaded() {
+            gapi.load('client', async () => {
+                await gapi.client.init({
+                    apiKey: GDRIVE_CONFIG.API_KEY,
+                    discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
+                });
+            });
+        }
+
+        function gisLoaded() {
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: GDRIVE_CONFIG.CLIENT_ID,
+                scope: GDRIVE_CONFIG.SCOPES,
+                callback: (resp) => {
+                    if (resp.error !== undefined) throw (resp);
+                    accessToken = resp.access_token;
+                    showToast('🔐 ¡Conectado a Google Drive!');
+                    document.getElementById('btnAuth').style.display = 'none';
+                },
+            });
+        }
+
+        function autenticarGoogle() {
+            if (accessToken) return;
+            tokenClient.requestAccessToken({prompt: 'consent'});
+        }
+
+        /* ==========================================
+           2. LÓGICA DEL PANEL DE AJUSTES (NUEVO)
+           ========================================== */
+        
+        // Cargar el ID guardado al abrir la página
+        function cargarConfiguracion() {
+            const idGuardado = localStorage.getItem('pld_drive_folder_id');
+            const input = document.getElementById('configFolderId');
+            
+            if (idGuardado) {
+                carpetaDestinoID = idGuardado;
+                input.value = idGuardado;
+                console.log("📂 Carpeta configurada:", carpetaDestinoID);
+            }
+        }
+
+        // Guardar el ID cuando presionas el botón "Guardar ID"
+        function guardarConfiguracionDrive() {
+            const input = document.getElementById('configFolderId');
+            const nuevoId = input.value.trim();
+
+            if (!nuevoId) {
+                alert("⚠️ Escribe un ID válido");
+                return;
+            }
+
+            carpetaDestinoID = nuevoId;
+            localStorage.setItem('pld_drive_folder_id', nuevoId);
+            showToast('✅ Carpeta configurada correctamente');
+        }
+
+        /* ==========================================
+           3. SISTEMA DE EXPEDIENTES
+           ========================================== */
+        const DOCS_REQ = [
+            { id: 'ine', nombre: 'Identificación Oficial', cant: 1 },
+            { id: 'contrato', nombre: 'Contrato Arrendamiento', cant: 1 },
+            { id: 'rfc', nombre: 'Constancia Fiscal', cant: 1 },
+            { id: 'pago', nombre: 'Comprobantes Pago', cant: 12 },
+            { id: 'riesgo', nombre: 'Matriz de Riesgo', cant: 1 }
+        ];
+
+        let expedientes = JSON.parse(localStorage.getItem('pld_data') || '[]');
+        let expIndex = null;
+
+        function guardarData() {
+            localStorage.setItem('pld_data', JSON.stringify(expedientes));
+            renderTabla();
+        }
+
+        function nuevoExpediente() {
+            const cliente = prompt("Nombre del Cliente:");
+            if(!cliente) return;
+            const anio = prompt("Año:", new Date().getFullYear());
+            
+            const nuevo = {
+                id: Date.now(),
+                cliente, 
+                anio,
+                docs: {}
+            };
+            DOCS_REQ.forEach(d => nuevo.docs[d.id] = []);
+            
+            expedientes.push(nuevo);
+            guardarData();
+        }
+
+        function borrarTodo() {
+            if(confirm("¿Borrar todo?")) {
+                localStorage.removeItem('pld_data');
+                location.reload();
+            }
+        }
+
+        /* ==========================================
+           4. SUBIDA A DRIVE Y RENDERIZADO
+           ========================================== */
+        
+        async function subirArchivo(files, docId) {
+            if (!accessToken) { autenticarGoogle(); return; }
+            if (!carpetaDestinoID) { alert("⚠️ Primero configura el ID de la carpeta en el panel superior."); return; }
+
+            const exp = expedientes[expIndex];
+            
+            showToast('☁️ Subiendo a la nube...');
+
+            for (const file of files) {
+                if (file.type !== 'application/pdf') { alert("Solo PDF"); continue; }
+
+                try {
+                    // Subida Real a Google Drive API
+                    const metadata = {
+                        'name': `${exp.cliente}_${file.name}`,
+                        'parents': [carpetaDestinoID] // Usa el ID del panel
+                    };
+
+                    const form = new FormData();
+                    form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+                    form.append('file', file);
+
+                    const resp = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink', {
+                        method: 'POST',
+                        headers: new Headers({ 'Authorization': 'Bearer ' + accessToken }),
+                        body: form
+                    });
+
+                    const driveData = await resp.json();
+
+                    // Guardar referencia local
+                    exp.docs[docId].push({
+                        nombre: file.name,
+                        link: driveData.webViewLink
+                    });
+
+                } catch (e) {
+                    console.error(e);
+                    alert("Error subiendo: " + e);
+                }
+            }
+            guardarData();
+            renderChecklist(exp);
+            showToast('✅ Archivos guardados en Drive');
+        }
+
+        function renderTabla() {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+            let completos = 0;
+
+            expedientes.forEach((exp, idx) => {
+                let totalCargado = 0;
+                let totalReq = 0;
+                DOCS_REQ.forEach(d => {
+                    totalReq += d.cant;
+                    totalCargado += Math.min(exp.docs[d.id].length, d.cant);
+                });
+                
+                const pct = Math.round((totalCargado / totalReq) * 100);
+                if(pct === 100) completos++;
+
+                tbody.innerHTML += `
+                    <tr>
+                        <td>${exp.anio}</td>
+                        <td><strong>${exp.cliente}</strong></td>
+                        <td>${pct}%</td>
+                        <td class="${pct===100?'completo':'parcial'}">${pct===100?'✓ Completo':'En Proceso'}</td>
+                        <td><button class="btn btn-info" onclick="abrirChecklist(${idx})">📂 Ver Docs</button></td>
+                    </tr>
+                `;
+            });
+            
+            document.getElementById('totalCompletos').innerText = completos;
+            document.getElementById('totalExpedientes').innerText = expedientes.length;
+        }
+
+        function abrirChecklist(idx) {
+            expIndex = idx;
+            document.getElementById('modalTitle').innerText = expedientes[idx].cliente;
+            document.getElementById('checklistModal').classList.add('active');
+            renderChecklist(expedientes[idx]);
+        }
+
+        function renderChecklist(exp) {
+            const container = document.getElementById('checklistContainer');
+            container.innerHTML = '';
+
+            DOCS_REQ.forEach(d => {
+                const archivos = exp.docs[d.id];
+                const isOk = archivos.length >= d.cant;
+                
+                let htmlArchivos = archivos.map(a => 
+                    `<a href="${a.link}" target="_blank" class="file-link">📄 ${a.nombre} 🔗</a>`
+                ).join('');
+
+                container.innerHTML += `
+                    <div class="doc-card ${isOk ? 'ok' : ''}">
+                        <h4>${d.nombre} (${archivos.length}/${d.cant})</h4>
+                        <div class="upload-zone" onclick="document.getElementById('f_${d.id}').click()">
+                            ${isOk ? '✅ Listo (Clic para agregar más)' : '📤 Subir PDF'}
+                        </div>
+                        <input type="file" id="f_${d.id}" hidden onchange="subirArchivo(this.files, '${d.id}')">
+                        <div style="margin-top:10px;">${htmlArchivos}</div>
+                    </div>
+                `;
+            });
+        }
+
+        function cerrarChecklist() {
+            document.getElementById('checklistModal').classList.remove('active');
+            renderTabla();
+        }
+
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.innerText = msg;
+            t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 3000);
+        }
+
+        // Inicialización
+        cargarConfiguracion();
+        renderTabla();
+
+    </script>
+</body>
+</html>
